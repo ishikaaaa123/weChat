@@ -149,6 +149,10 @@ const getConvoMessage = async(req,res)=>{
             $set:{unreadCount:0}
         })
 
+        for (const message of unreadMessages) {
+            message.messageStatus = "read";
+        }
+
         if (req.io?.emitToUser) {
             for (const message of unreadMessages) {
                 req.io.emitToUser(message.sender._id, "message_status_update", {
@@ -216,6 +220,17 @@ const deleteMessage = async(req,res)=>{
         }
 
         await Message.deleteOne({ _id: message._id });
+
+        const latestMessage = await Message.findOne({
+            conversation: message.conversation,
+            _id: { $ne: message._id },
+        })
+            .sort({ createdAt: -1 })
+            .select("_id");
+
+        await Conversation.findByIdAndUpdate(message.conversation, {
+            $set: { lastMessage: latestMessage?._id || null },
+        });
 
         if (req.io?.emitToUser){
             req.io.emitToUser(message.receiver, "message_deleted", { messageId });
