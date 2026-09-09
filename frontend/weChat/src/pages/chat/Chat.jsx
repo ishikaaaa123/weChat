@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import useUserStore from "../../../store/useUserStore";
 import { deleteMessage, getConversations, getMessages, sendMessage } from "../../services/chat.services";
 import { connectSocket, disconnectSocket, getSocket } from "../../services/socket";
@@ -22,6 +22,7 @@ function Avatar({ user, online }) {
 function Chat() {
   const user = useUserStore((state) => state.user);
   const setUser = useUserStore((state) => state.setUser);
+  const navigate = useNavigate();
   const currentUserId = userIdOf(user);
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
@@ -238,9 +239,9 @@ function Chat() {
 
   return <main className="chat-page">
     <aside className={`chat-sidebar ${activeConversation ? "mobile-hidden" : ""}`}>
-      <header className="chat-brand"><b>◌</b><span>We<span>Chat</span></span><button type="button" onClick={() => { setProfileName(user?.username || ""); setProfileAbout(user?.about || ""); setShowProfile(true); }}>My profile</button><button type="button" onClick={openContacts}>New chat</button></header>
+      <header className="chat-brand"><b>◌</b><span>We<span>Chat</span></span><button type="button" onClick={() => navigate("/profile")}>My profile</button><button type="button" onClick={openContacts}>New chat</button></header>
       <div className="chat-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search chats" /></div>
-      <section className="status-strip"><div className="status-strip-header"><strong>Status</strong><button type="button" onClick={() => setShowStatusComposer(true)}>Add status</button></div><div className="status-list"><button className="status-avatar add-status" type="button" onClick={() => setShowStatusComposer(true)}><b>＋</b><small>My status</small></button>{statuses.map((status) => <button className="status-avatar" type="button" key={status._id} onClick={() => openStatus(status)}><Avatar user={status.user} /><small>{labelFor(status.user)}</small></button>)}</div></section>
+      <section className="status-strip"><div className="status-strip-header"><strong>Status</strong><span><button type="button" onClick={() => navigate("/status")}>View all</button><button type="button" onClick={() => setShowStatusComposer(true)}>Add status</button></span></div><div className="status-list"><button className="status-avatar add-status" type="button" onClick={() => setShowStatusComposer(true)}><b>＋</b><small>My status</small></button>{statuses.map((status) => <button className="status-avatar" type="button" key={status._id} onClick={() => openStatus(status)}><Avatar user={status.user} /><small>{labelFor(status.user)}</small></button>)}</div></section>
       <div className="conversation-list">
         {loading && <p>Loading chats…</p>}
         {!loading && !visibleConversations.length && <p>No conversations yet.</p>}
