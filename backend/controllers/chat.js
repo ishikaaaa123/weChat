@@ -145,9 +145,11 @@ const getConvoMessage = async(req,res)=>{
             {$set:{messageStatus:"read"}}
         );
 
+        // Reading a conversation must not update updatedAt: the sidebar should
+        // move only when an actual message is sent or received.
         await Conversation.updateOne({_id: conversationId},{
             $set:{unreadCount:0}
-        })
+        }, { timestamps: false })
 
         for (const message of unreadMessages) {
             message.messageStatus = "read";

@@ -108,6 +108,20 @@ const updateProfile = async(req,res)=>{
     if (agreed !== undefined) user.agreed = agreed === true || agreed === 'true';
     if (about)user.about = about;
     await user.save();
+    if (req.io) {
+      const profileUpdate = {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        profilePicture: user.profilePicture,
+        about: user.about,
+        phoneNumber: user.phoneNumber,
+        phoneSuffix: user.phoneSuffix,
+        isOnline: user.isOnline,
+        lastSeen: user.lastSeen,
+      };
+      req.io.emit("profile_updated", profileUpdate);
+    }
     return response(res,200,"user info updated successfully",user);
   }catch(error){
     console.error(error);

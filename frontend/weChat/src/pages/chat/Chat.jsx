@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import useUserStore from "../../../store/useUserStore";
 import { deleteMessage, getConversations, getMessages, sendMessage } from "../../services/chat.services";
 import { connectSocket, disconnectSocket, getSocket } from "../../services/socket";
-import { getAllUsers, updateUserProfile } from "../../services/user.services";
+import { getAllUsers, logoutUser, updateUserProfile } from "../../services/user.services";
 import { createStatus, deleteStatus, getStatuses, viewStatus } from "../../services/status.services";
 import "./chat.css";
 
@@ -13,6 +13,24 @@ const userIdOf = (user) => String(user?._id || user?.id || "");
 // never rendered as the misleading "Unknown" label.
 const labelFor = (user) => user?.username || user?.email || user?.phoneNumber || "User";
 const timeFor = (value) => value ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+const timestampFor = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  const today = new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  return sameDay ? timeFor(value) : `${date.toLocaleDateString([], { day: "numeric", month: "short" })}, ${timeFor(value)}`;
+};
+const dateLabelFor = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
+};
+const reactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 function Avatar({ user, online }) {
   const name = labelFor(user);
@@ -22,6 +40,7 @@ function Avatar({ user, online }) {
 function Chat() {
   const user = useUserStore((state) => state.user);
   const setUser = useUserStore((state) => state.setUser);
+  const clearUser = useUserStore((state) => state.clearUser);
   const navigate = useNavigate();
   const currentUserId = userIdOf(user);
   const [conversations, setConversations] = useState([]);
@@ -51,6 +70,8 @@ function Chat() {
   const [profileAbout, setProfileAbout] = useState(user?.about || "");
   const [profileFile, setProfileFile] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [reactionPickerId, setReactionPickerId] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const fileInput = useRef(null);
   const statusFileInput = useRef(null);
   const profileFileInput = useRef(null);
@@ -96,6 +117,15 @@ function Chat() {
     const removed = ({ messageId }) => setMessages((current) => current.filter((message) => message._id !== messageId));
     const statusCreated = (status) => setStatuses((current) => [status, ...current.filter((item) => item._id !== status._id)]);
     const statusRemoved = (statusId) => setStatuses((current) => current.filter((status) => status._id !== statusId));
+    const reactionUpdated = ({ messageId, reactions }) => setMessages((current) => current.map((message) => message._id === messageId ? { ...message, reactions } : message));
+    const profileUpdated = (updatedUser) => {
+      const updatedUserId = userIdOf(updatedUser);
+      const applyProfile = (member) => userIdOf(member) === updatedUserId ? { ...member, ...updatedUser } : member;
+      setConversations((current) => current.map((conversation) => ({ ...conversation, participants: (conversation.participants || []).map(applyProfile) })));
+      setContacts((current) => current.map(applyProfile));
+      setActiveConversation((current) => current ? { ...current, participants: (current.participants || []).map(applyProfile) } : current);
+      if (updatedUserId === currentUserId) setUser(updatedUser);
+    };
     socket.on("receive_message", receiveMessage);
     socket.on("user_status", presence);
     socket.on("user_typing", typing);
@@ -103,6 +133,8 @@ function Chat() {
     socket.on("message_deleted", removed);
     socket.on("new_status", statusCreated);
     socket.on("status_deleted", statusRemoved);
+    socket.on("reaction_update", reactionUpdated);
+    socket.on("profile_updated", profileUpdated);
     return () => {
       socket.off("receive_message", receiveMessage);
       socket.off("user_status", presence);
@@ -111,8 +143,10 @@ function Chat() {
       socket.off("message_deleted", removed);
       socket.off("new_status", statusCreated);
       socket.off("status_deleted", statusRemoved);
+      socket.off("reaction_update", reactionUpdated);
+      socket.off("profile_updated", profileUpdated);
     };
-  }, [activeConversation?._id, currentUserId, loadConversations]);
+  }, [activeConversation?._id, currentUserId, loadConversations, setUser]);
 
   useEffect(() => () => disconnectSocket(), []);
   useEffect(() => {
@@ -130,7 +164,7 @@ function Chat() {
     try {
       const response = await getMessages(conversation._id);
       setMessages(response.data || []);
-      loadConversations();
+      setConversations((current) => current.map((item) => item._id === conversation._id ? { ...item, unreadCount: 0 } : item));
     } catch (requestError) { setError(requestError?.message || "Could not load messages."); }
   };
 
@@ -233,6 +267,23 @@ function Chat() {
     if (activeConversation && otherUser) getSocket()?.emit(value ? "typing_start" : "typing_stop", { conversationId: activeConversation._id, receiverId: userIdOf(otherUser) });
   };
 
+  const reactToMessage = (messageId, emoji) => {
+    getSocket()?.emit("add_reaction", { messageId, emoji, reactionUserId: currentUserId });
+    setReactionPickerId(null);
+  };
+
+  const logout = async () => {
+    setLoggingOut(true);
+    try {
+      await logoutUser();
+      disconnectSocket();
+      clearUser();
+      navigate("/user-login", { replace: true });
+    } catch (requestError) {
+      setError(requestError?.message || "Could not log out. Please try again.");
+    } finally { setLoggingOut(false); }
+  };
+
   const visibleConversations = conversations.filter((conversation) => labelFor(conversation.participants?.find((member) => userIdOf(member) !== currentUserId)).toLowerCase().includes(query.toLowerCase()));
   const visibleContacts = contacts.filter((contact) => `${contact.username || ""} ${contact.phoneNumber || ""} ${contact.email || ""}`.toLowerCase().includes(contactQuery.trim().toLowerCase()));
   if (!currentUserId) return <Navigate to="/user-login" replace />;
@@ -255,6 +306,10 @@ function Chat() {
         <button type="button" className="rail-item" onClick={() => navigate("/profile")} aria-label="Profile">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12.2a4.6 4.6 0 1 0-4.6-4.6 4.6 4.6 0 0 0 4.6 4.6Zm0 2.1c-3.7 0-7.4 1.9-7.4 4.5 0 .9.7 1.4 1.6 1.4h11.6c.9 0 1.6-.5 1.6-1.4 0-2.6-3.7-4.5-7.4-4.5Z" /></svg>
           <small>Profile</small>
+        </button>
+        <button type="button" className="rail-item rail-logout" onClick={logout} disabled={loggingOut} aria-label="Log out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" /><path d="m14 16 4-4-4-4" /><path d="M18 12H9" /></svg>
+          <small>{loggingOut ? "Leaving…" : "Log out"}</small>
         </button>
       </div>
       <button type="button" className="rail-avatar" onClick={() => navigate("/profile")} aria-label="My profile">
@@ -279,7 +334,27 @@ function Chat() {
     <section className={`chat-window ${activeConversation ? "" : "desktop-empty"}`}>
       {!activeConversation ? <p className="empty-state">Select a chat to start messaging</p> : <>
         <header className="chat-header"><button className="back-button" type="button" onClick={() => setActiveConversation(null)}>‹</button><Avatar user={otherUser} online={onlineUsers.includes(userIdOf(otherUser))} /><span><strong>{labelFor(otherUser)}</strong><small>{typingUserId === userIdOf(otherUser) ? "typing…" : onlineUsers.includes(userIdOf(otherUser)) ? "Online" : "Offline"}</small></span><div className="call-actions"><button type="button" aria-label="Voice call">⌕</button><button type="button" aria-label="Video call">▣</button></div></header>
-        <div className="message-list">{messages.map((message) => { const mine = userIdOf(message.sender) === currentUserId; return <article className={`message ${mine ? "mine" : ""}`} key={message._id}><div>{message.imageOrVideoUrl && message.contentType === "image" && <button className="message-image-button" type="button" onClick={() => setExpandedImage(message.imageOrVideoUrl)} aria-label="Open image in full size"><img src={message.imageOrVideoUrl} alt="Shared image" /></button>}{message.imageOrVideoUrl && message.contentType === "video" && <video src={message.imageOrVideoUrl} controls />}{message.content && <p>{message.content}</p>}<small>{timeFor(message.createdAt)} {mine && (message.messageStatus === "read" ? "✓✓" : "✓")}</small></div>{mine && <button className="delete-message" type="button" onClick={() => deleteMessage(message._id).then(() => setMessages((current) => current.filter((item) => item._id !== message._id)))}>×</button>}</article>; })}{typingUserId === userIdOf(otherUser) && <p className="typing-indicator">typing…</p>}<span ref={bottom} /></div>
+        <div className="message-list">{messages.map((message, index) => {
+          const mine = userIdOf(message.sender) === currentUserId;
+          const reactions = message.reactions || [];
+          const previousMessage = messages[index - 1];
+          const showDate = !previousMessage || new Date(message.createdAt).toDateString() !== new Date(previousMessage.createdAt).toDateString();
+          return <Fragment key={message._id}>
+            {showDate && <p className="message-date-divider">{dateLabelFor(message.createdAt)}</p>}
+            <article className={`message ${mine ? "mine" : ""}`}>
+            <div>
+              {message.imageOrVideoUrl && message.contentType === "image" && <button className="message-image-button" type="button" onClick={() => setExpandedImage(message.imageOrVideoUrl)} aria-label="Open image in full size"><img src={message.imageOrVideoUrl} alt="Shared image" /></button>}
+              {message.imageOrVideoUrl && message.contentType === "video" && <video src={message.imageOrVideoUrl} controls />}
+              {message.content && <p>{message.content}</p>}
+              <small title={message.createdAt ? new Date(message.createdAt).toLocaleString() : ""}>{timestampFor(message.createdAt)} {mine && (message.messageStatus === "read" ? <span className="read-ticks" aria-label="Read"><i>✓</i><i>✓</i></span> : <span className="sent-tick" aria-label="Sent">✓</span>)}</small>
+              {reactions.length > 0 && <div className="message-reactions">{reactions.map((reaction, index) => <span key={`${reaction.emoji}-${userIdOf(reaction.user)}-${index}`} title={reaction.user?.username || "Reaction"}>{reaction.emoji}</span>)}</div>}
+              <button className="reaction-trigger" type="button" onClick={() => setReactionPickerId((current) => current === message._id ? null : message._id)} aria-label="React to message">☺</button>
+              {reactionPickerId === message._id && <div className="reaction-picker">{reactionEmojis.map((emoji) => <button key={emoji} type="button" onClick={() => reactToMessage(message._id, emoji)} aria-label={`React with ${emoji}`}>{emoji}</button>)}</div>}
+            </div>
+            {mine && <button className="delete-message" type="button" onClick={() => deleteMessage(message._id).then(() => setMessages((current) => current.filter((item) => item._id !== message._id)))}>×</button>}
+            </article>
+          </Fragment>;
+        })}{typingUserId === userIdOf(otherUser) && <p className="typing-indicator">typing…</p>}<span ref={bottom} /></div>
         <form className="composer" onSubmit={send}>{file && <small>Attached: {file.name}</small>}<div><button type="button" onClick={() => fileInput.current?.click()}>＋</button><input ref={fileInput} hidden type="file" accept="image/*,video/*" onChange={(event) => setFile(event.target.files?.[0] || null)} /><input value={draft} onChange={(event) => updateDraft(event.target.value)} onBlur={() => updateDraft("")} placeholder="Type a message..." /><button className="send-button" type="submit" disabled={sending}>{sending ? "…" : "Send"}</button></div></form>
       </>}</section>
     {error && <button className="chat-error" type="button" onClick={() => setError("")}>{error}</button>}
