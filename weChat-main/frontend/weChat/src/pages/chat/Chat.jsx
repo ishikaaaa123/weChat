@@ -240,20 +240,20 @@ function Chat() {
   return <main className="chat-page">
     <nav className="app-rail" aria-label="Main navigation">
       <button type="button" className="rail-brand" onClick={() => navigate("/chat")} aria-label="WeChat home">
-        <svg className="rail-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18.2 8.5c-2-3-5.5-3-7.4-.6L12 9.6l1.2-1.7c1.9-2.4 5.4-2.4 7.4.6s1.3 6.6-.6 7.4c-1.3.6-2.9-.2-4.3-2.1L12 9.6l-3.7 4.2c-1.4 1.9-3 2.7-4.3 2.1-1.9-.8-2.6-4.4-.6-7.4s5.5-3 7.4-.6L12 9.6" /></svg>
+        <svg className="rail-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18.2 8.5c-2-3-5.5-3-7.4-.6L12 9.6l1.2-1.7c1.9-2.4 5.4-2.4 7.4.6s1.3 6.6-.6 7.4c-1.3.6-2.9-.2-4.3-2.1L12 9.6l-3.7 4.2c-1.4 1.9-3 2.7-4.3 2.1-1.9-.8-2.6-4.4-.6-7.4s5.5-3 7.4-.6L12 9.6"/></svg>
         <span className="rail-title">WeChat</span>
       </button>
       <div className="rail-items">
         <button type="button" className="rail-item active" onClick={() => navigate("/chat")} aria-label="Chats">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.5 5.1 3.8 6.7-.1 1-.5 2.3-1.3 3.1-.2.2 0 .6.3.6 1.9-.1 3.6-.9 4.7-1.7.8.2 1.6.3 2.5.3 5.5 0 10-3.9 10-8.7S17.5 3 12 3Z" /></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.5 5.1 3.8 6.7-.1 1-.5 2.3-1.3 3.1-.2.2 0 .6.3.6 1.9-.1 3.6-.9 4.7-1.7.8.2 1.6.3 2.5.3 5.5 0 10-3.9 10-8.7S17.5 3 12 3Z"/></svg>
           <small>Chats</small>
         </button>
         <button type="button" className="rail-item" onClick={() => navigate("/status")} aria-label="Status">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="8.2" strokeDasharray="4.4 3.4" /><circle cx="12" cy="12" r="3.1" fill="currentColor" stroke="none" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="8.2" strokeDasharray="4.4 3.4"/><circle cx="12" cy="12" r="3.1" fill="currentColor" stroke="none"/></svg>
           <small>Status</small>
         </button>
         <button type="button" className="rail-item" onClick={() => navigate("/profile")} aria-label="Profile">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12.2a4.6 4.6 0 1 0-4.6-4.6 4.6 4.6 0 0 0 4.6 4.6Zm0 2.1c-3.7 0-7.4 1.9-7.4 4.5 0 .9.7 1.4 1.6 1.4h11.6c.9 0 1.6-.5 1.6-1.4 0-2.6-3.7-4.5-7.4-4.5Z" /></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12.2a4.6 4.6 0 1 0-4.6-4.6 4.6 4.6 0 0 0 4.6 4.6Zm0 2.1c-3.7 0-7.4 1.9-7.4 4.5 0 .9.7 1.4 1.6 1.4h11.6c.9 0 1.6-.5 1.6-1.4 0-2.6-3.7-4.5-7.4-4.5Z"/></svg>
           <small>Profile</small>
         </button>
       </div>
