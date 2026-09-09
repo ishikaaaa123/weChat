@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { clearPhoneOtpSession } from "../../services/firebase";
 import {
   sendOtp,
@@ -38,6 +39,7 @@ function Login() {
   const setSteps = useLoginStore((state) => state.setSteps);
   const setUserPhoneData = useLoginStore((state) => state.setUserPhoneData);
   const setUser = useUserStore((state) => state.setUser);
+  const navigate = useNavigate();
 
   useEffect(() => () => clearPhoneOtpSession(), []);
 
@@ -93,9 +95,11 @@ function Login() {
         ? await verifyPhoneOtp(code)
         : await verifyOtp(email.trim(), code.trim());
 
-      if (result?.data) setUser(result.data);
-      setMessage("You're signed in. Welcome to WeChat!");
+      const account = method === "phone" ? result?.data : result?.data?.user;
+      if (!account) throw new Error("Your account could not be loaded after verification.");
+      setUser({ ...account, _id: account._id || account.id });
       setSteps(3);
+      navigate("/chat");
     } catch (verifyError) {
       setError(readableError(verifyError));
     } finally {

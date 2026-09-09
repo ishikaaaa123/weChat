@@ -93,12 +93,12 @@ const getAllConvo = async(req,res)=>{
     const userId = req.user.userId;
     try{
         let convo = await Conversation.find({participants:userId})
-                .populate("participants","username profilePicture isOnline lastSeen")
+                .populate("participants","username email phoneNumber profilePicture isOnline lastSeen")
                 .populate({
                     path:"lastMessage",
                     populate:{
                         path:"sender receiver",
-                        select : "username profilePicture"
+                        select : "username email phoneNumber profilePicture"
                     }
                 }).sort({updatedAt:-1})
 
@@ -126,8 +126,8 @@ const getConvoMessage = async(req,res)=>{
             return response(res,403,"Not authorized to access");
         }
         const messages = await Message.find({conversation: conversationId})
-                                    .populate("sender","username profilePicture")
-                                    .populate("receiver","username profilePicture")
+                                    .populate("sender","username email phoneNumber profilePicture")
+                                    .populate("receiver","username email phoneNumber profilePicture")
                                     .sort({ createdAt: 1 });
 
         const unreadMessages = messages.filter(

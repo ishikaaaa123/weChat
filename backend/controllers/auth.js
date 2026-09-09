@@ -130,7 +130,7 @@ const getAllUsers = async (req, res) => {
 
   try {
     const users = await User.find({ _id: { $ne: loggedInUser } })
-      .select('username profilePicture lastSeen isOnline about phoneNumber phoneSuffix')
+      .select('username email profilePicture lastSeen isOnline about phoneNumber phoneSuffix')
       .lean();
 
     const userWithConvo = await Promise.all(

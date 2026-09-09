@@ -1,0 +1,203 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Navigate } from "react-router-dom";
+import useUserStore from "../../../store/useUserStore";
+import { deleteMessage, getConversations, getMessages, sendMessage } from "../../services/chat.services";
+import { connectSocket, disconnectSocket, getSocket } from "../../services/socket";
+import { getAllUsers } from "../../services/user.services";
+import "./chat.css";
+
+const userIdOf = (user) => String(user?._id || user?.id || "");
+// Email is the best stable label for accounts that have not set a username.
+// Phone-only accounts still have a usable fallback, but a missing profile is
+// never rendered as the misleading "Unknown" label.
+const labelFor = (user) => user?.username || user?.email || user?.phoneNumber || "User";
+const timeFor = (value) => value ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+
+function Avatar({ user, online }) {
+  const name = labelFor(user);
+  return <span className="avatar">{user?.profilePicture ? <img src={user.profilePicture} alt={name} /> : name[0]?.toUpperCase()}{online && <i />}</span>;
+}
+
+function Chat() {
+  const user = useUserStore((state) => state.user);
+  const currentUserId = userIdOf(user);
+  const [conversations, setConversations] = useState([]);
+  const [activeConversation, setActiveConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [typingUserId, setTypingUserId] = useState(null);
+  const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState("");
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [showContacts, setShowContacts] = useState(false);
+  const [contacts, setContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactQuery, setContactQuery] = useState("");
+  const [expandedImage, setExpandedImage] = useState("");
+  const fileInput = useRef(null);
+  const bottom = useRef(null);
+
+  const otherUser = useMemo(() => activeConversation?.participants?.find((member) => userIdOf(member) !== currentUserId) || null, [activeConversation, currentUserId]);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const response = await getConversations();
+      const list = response.data || [];
+      setConversations(list);
+      setOnlineUsers((existing) => [...new Set([...existing, ...list.flatMap((chat) => chat.participants || []).filter((member) => member.isOnline).map(userIdOf)])]);
+    } catch (requestError) {
+      setError(requestError?.message || "Could not load conversations.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadConversations(); }, [loadConversations]);
+  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, typingUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+    const socket = connectSocket(currentUserId);
+    const receiveMessage = (message) => {
+      setMessages((current) => message.conversation === activeConversation?._id ? [...current, message] : current);
+      loadConversations();
+    };
+    const presence = ({ userId, isOnline }) => setOnlineUsers((current) => isOnline ? [...new Set([...current, String(userId)])] : current.filter((id) => id !== String(userId)));
+    const typing = ({ userId, isTyping }) => setTypingUserId(isTyping ? String(userId) : null);
+    const status = ({ messageId, messageStatus }) => setMessages((current) => current.map((message) => message._id === messageId ? { ...message, messageStatus } : message));
+    const removed = ({ messageId }) => setMessages((current) => current.filter((message) => message._id !== messageId));
+    socket.on("receive_message", receiveMessage);
+    socket.on("user_status", presence);
+    socket.on("user_typing", typing);
+    socket.on("message_status_update", status);
+    socket.on("message_deleted", removed);
+    return () => {
+      socket.off("receive_message", receiveMessage);
+      socket.off("user_status", presence);
+      socket.off("user_typing", typing);
+      socket.off("message_status_update", status);
+      socket.off("message_deleted", removed);
+    };
+  }, [activeConversation?._id, currentUserId, loadConversations]);
+
+  useEffect(() => () => disconnectSocket(), []);
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setExpandedImage("");
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
+
+  const openConversation = async (conversation) => {
+    setActiveConversation(conversation);
+    setMessages([]);
+    setTypingUserId(null);
+    try {
+      const response = await getMessages(conversation._id);
+      setMessages(response.data || []);
+      loadConversations();
+    } catch (requestError) { setError(requestError?.message || "Could not load messages."); }
+  };
+
+  const openContacts = async () => {
+    setShowContacts(true);
+    setContactQuery("");
+    setContactsLoading(true);
+    try {
+      const response = await getAllUsers();
+      setContacts(response.data || []);
+    } catch (requestError) {
+      setError(requestError?.message || "Could not load people.");
+    } finally {
+      setContactsLoading(false);
+    }
+  };
+
+  const startConversation = async (contact) => {
+    const conversation = {
+      _id: contact.conversation?._id || null,
+      participants: [user, contact],
+      lastMessage: contact.conversation?.lastMessage || null,
+    };
+    setShowContacts(false);
+    setActiveConversation(conversation);
+    setMessages([]);
+    setTypingUserId(null);
+    if (!conversation._id) return;
+    try {
+      const response = await getMessages(conversation._id);
+      setMessages(response.data || []);
+    } catch (requestError) {
+      setError(requestError?.message || "Could not load messages.");
+    }
+  };
+
+  const send = async (event) => {
+    event.preventDefault();
+    if ((!draft.trim() && !file) || !otherUser) return;
+    setSending(true);
+    try {
+      const response = await sendMessage({ receiverId: userIdOf(otherUser), content: draft.trim(), file });
+      if (response.data) setMessages((current) => [...current, response.data]);
+      if (!activeConversation._id && response.data?.conversation) {
+        setActiveConversation((current) => ({ ...current, _id: response.data.conversation }));
+      }
+      setDraft(""); setFile(null); if (fileInput.current) fileInput.current.value = "";
+      getSocket()?.emit("typing_stop", { conversationId: activeConversation._id, receiverId: userIdOf(otherUser) });
+      loadConversations();
+    } catch (requestError) { setError(requestError?.message || "Message could not be sent."); }
+    finally { setSending(false); }
+  };
+
+  const updateDraft = (value) => {
+    setDraft(value);
+    if (activeConversation && otherUser) getSocket()?.emit(value ? "typing_start" : "typing_stop", { conversationId: activeConversation._id, receiverId: userIdOf(otherUser) });
+  };
+
+  const visibleConversations = conversations.filter((conversation) => labelFor(conversation.participants?.find((member) => userIdOf(member) !== currentUserId)).toLowerCase().includes(query.toLowerCase()));
+  const visibleContacts = contacts.filter((contact) => `${contact.username || ""} ${contact.phoneNumber || ""} ${contact.email || ""}`.toLowerCase().includes(contactQuery.trim().toLowerCase()));
+  if (!currentUserId) return <Navigate to="/user-login" replace />;
+
+  return <main className="chat-page">
+    <aside className={`chat-sidebar ${activeConversation ? "mobile-hidden" : ""}`}>
+      <header className="chat-brand"><b>◌</b><span>We<span>Chat</span></span><button type="button" onClick={openContacts}>New chat</button></header>
+      <div className="chat-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search chats" /></div>
+      <button className="status-entry" type="button" onClick={() => setError("Status updates are available through your existing status API.")}><b>◌</b><span><strong>Status</strong><small>See recent updates</small></span></button>
+      <div className="conversation-list">
+        {loading && <p>Loading chats…</p>}
+        {!loading && !visibleConversations.length && <p>No conversations yet.</p>}
+        {visibleConversations.map((conversation) => {
+          const other = conversation.participants?.find((member) => userIdOf(member) !== currentUserId);
+          const last = conversation.lastMessage;
+          return <button className={`conversation ${conversation._id === activeConversation?._id ? "selected" : ""}`} key={conversation._id} onClick={() => openConversation(conversation)}><Avatar user={other} online={onlineUsers.includes(userIdOf(other))} /><span><strong>{labelFor(other)}</strong><small>{last?.contentType === "image" ? "Photo" : last?.contentType === "video" ? "Video" : last?.content || "Say hello"}</small></span><time>{timeFor(last?.createdAt || conversation.updatedAt)}</time></button>;
+        })}
+      </div>
+    </aside>
+
+    <section className={`chat-window ${activeConversation ? "" : "desktop-empty"}`}>
+      {!activeConversation ? <p className="empty-state">Select a chat to start messaging</p> : <>
+        <header className="chat-header"><button className="back-button" type="button" onClick={() => setActiveConversation(null)}>‹</button><Avatar user={otherUser} online={onlineUsers.includes(userIdOf(otherUser))} /><span><strong>{labelFor(otherUser)}</strong><small>{typingUserId === userIdOf(otherUser) ? "typing…" : onlineUsers.includes(userIdOf(otherUser)) ? "Online" : "Offline"}</small></span><div className="call-actions"><button type="button" aria-label="Voice call">⌕</button><button type="button" aria-label="Video call">▣</button></div></header>
+        <div className="message-list">{messages.map((message) => { const mine = userIdOf(message.sender) === currentUserId; return <article className={`message ${mine ? "mine" : ""}`} key={message._id}><div>{message.imageOrVideoUrl && message.contentType === "image" && <button className="message-image-button" type="button" onClick={() => setExpandedImage(message.imageOrVideoUrl)} aria-label="Open image in full size"><img src={message.imageOrVideoUrl} alt="Shared image" /></button>}{message.imageOrVideoUrl && message.contentType === "video" && <video src={message.imageOrVideoUrl} controls />}{message.content && <p>{message.content}</p>}<small>{timeFor(message.createdAt)} {mine && (message.messageStatus === "read" ? "✓✓" : "✓")}</small></div>{mine && <button className="delete-message" type="button" onClick={() => deleteMessage(message._id).then(() => setMessages((current) => current.filter((item) => item._id !== message._id)))}>×</button>}</article>; })}{typingUserId === userIdOf(otherUser) && <p className="typing-indicator">typing…</p>}<span ref={bottom} /></div>
+        <form className="composer" onSubmit={send}>{file && <small>Attached: {file.name}</small>}<div><button type="button" onClick={() => fileInput.current?.click()}>＋</button><input ref={fileInput} hidden type="file" accept="image/*,video/*" onChange={(event) => setFile(event.target.files?.[0] || null)} /><input value={draft} onChange={(event) => updateDraft(event.target.value)} onBlur={() => updateDraft("")} placeholder="Type a message..." /><button className="send-button" type="submit" disabled={sending}>{sending ? "…" : "Send"}</button></div></form>
+      </>}</section>
+    {error && <button className="chat-error" type="button" onClick={() => setError("")}>{error}</button>}
+    {expandedImage && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="Full-size image" onClick={() => setExpandedImage("")}><button className="image-lightbox-close" type="button" aria-label="Close full-size image" onClick={() => setExpandedImage("")}>×</button><img src={expandedImage} alt="Shared image in full size" onClick={(event) => event.stopPropagation()} /></div>}
+    {showContacts && <div className="contact-modal" role="dialog" aria-modal="true" aria-label="Start a new chat">
+      <div className="contact-card">
+        <header><strong>New chat</strong><button type="button" onClick={() => setShowContacts(false)} aria-label="Close">×</button></header>
+        <input autoFocus value={contactQuery} onChange={(event) => setContactQuery(event.target.value)} placeholder="Search name, email, or phone" />
+        <div className="contact-list">
+          {contactsLoading && <p>Loading people…</p>}
+          {!contactsLoading && !visibleContacts.length && <p>{contactQuery.trim() ? "No registered user from this name yet." : "No registered people found."}</p>}
+          {visibleContacts.map((contact) => <button type="button" key={userIdOf(contact)} onClick={() => startConversation(contact)}><Avatar user={contact} /><span><strong>{labelFor(contact)}</strong><small>{contact.phoneNumber || contact.email || "No contact detail"}</small></span></button>)}
+        </div>
+      </div>
+    </div>}
+  </main>;
+}
+
+export default Chat;
