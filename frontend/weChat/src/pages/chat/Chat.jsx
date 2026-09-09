@@ -3,7 +3,8 @@ import { Navigate } from "react-router-dom";
 import useUserStore from "../../../store/useUserStore";
 import { deleteMessage, getConversations, getMessages, sendMessage } from "../../services/chat.services";
 import { connectSocket, disconnectSocket, getSocket } from "../../services/socket";
-import { getAllUsers } from "../../services/user.services";
+import { getAllUsers, updateUserProfile } from "../../services/user.services";
+import { createStatus, deleteStatus, getStatuses, viewStatus } from "../../services/status.services";
 import "./chat.css";
 
 const userIdOf = (user) => String(user?._id || user?.id || "");
@@ -20,6 +21,7 @@ function Avatar({ user, online }) {
 
 function Chat() {
   const user = useUserStore((state) => state.user);
+  const setUser = useUserStore((state) => state.setUser);
   const currentUserId = userIdOf(user);
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
@@ -37,7 +39,20 @@ function Chat() {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactQuery, setContactQuery] = useState("");
   const [expandedImage, setExpandedImage] = useState("");
+  const [statuses, setStatuses] = useState([]);
+  const [activeStatus, setActiveStatus] = useState(null);
+  const [showStatusComposer, setShowStatusComposer] = useState(false);
+  const [statusText, setStatusText] = useState("");
+  const [statusFile, setStatusFile] = useState(null);
+  const [statusSending, setStatusSending] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileName, setProfileName] = useState(user?.username || "");
+  const [profileAbout, setProfileAbout] = useState(user?.about || "");
+  const [profileFile, setProfileFile] = useState(null);
+  const [profileSaving, setProfileSaving] = useState(false);
   const fileInput = useRef(null);
+  const statusFileInput = useRef(null);
+  const profileFileInput = useRef(null);
   const bottom = useRef(null);
 
   const otherUser = useMemo(() => activeConversation?.participants?.find((member) => userIdOf(member) !== currentUserId) || null, [activeConversation, currentUserId]);
@@ -55,7 +70,16 @@ function Chat() {
     }
   }, []);
 
-  useEffect(() => { loadConversations(); }, [loadConversations]);
+  const loadStatuses = useCallback(async () => {
+    try {
+      const response = await getStatuses();
+      setStatuses(response.data || []);
+    } catch (requestError) {
+      setError(requestError?.message || "Could not load statuses.");
+    }
+  }, []);
+
+  useEffect(() => { loadConversations(); loadStatuses(); }, [loadConversations, loadStatuses]);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, typingUserId]);
 
   useEffect(() => {
@@ -69,17 +93,23 @@ function Chat() {
     const typing = ({ userId, isTyping }) => setTypingUserId(isTyping ? String(userId) : null);
     const status = ({ messageId, messageStatus }) => setMessages((current) => current.map((message) => message._id === messageId ? { ...message, messageStatus } : message));
     const removed = ({ messageId }) => setMessages((current) => current.filter((message) => message._id !== messageId));
+    const statusCreated = (status) => setStatuses((current) => [status, ...current.filter((item) => item._id !== status._id)]);
+    const statusRemoved = (statusId) => setStatuses((current) => current.filter((status) => status._id !== statusId));
     socket.on("receive_message", receiveMessage);
     socket.on("user_status", presence);
     socket.on("user_typing", typing);
     socket.on("message_status_update", status);
     socket.on("message_deleted", removed);
+    socket.on("new_status", statusCreated);
+    socket.on("status_deleted", statusRemoved);
     return () => {
       socket.off("receive_message", receiveMessage);
       socket.off("user_status", presence);
       socket.off("user_typing", typing);
       socket.off("message_status_update", status);
       socket.off("message_deleted", removed);
+      socket.off("new_status", statusCreated);
+      socket.off("status_deleted", statusRemoved);
     };
   }, [activeConversation?._id, currentUserId, loadConversations]);
 
@@ -115,6 +145,50 @@ function Chat() {
     } finally {
       setContactsLoading(false);
     }
+  };
+
+  const openStatus = async (status) => {
+    setActiveStatus(status);
+    if (userIdOf(status.user) === currentUserId) return;
+    try {
+      const response = await viewStatus(status._id);
+      if (response.data) setActiveStatus(response.data);
+    } catch (requestError) {
+      setError(requestError?.message || "Could not open status.");
+    }
+  };
+
+  const publishStatus = async (event) => {
+    event.preventDefault();
+    if (!statusText.trim() && !statusFile) return;
+    setStatusSending(true);
+    try {
+      const response = await createStatus({ content: statusText.trim(), file: statusFile });
+      if (response.data) setStatuses((current) => [response.data, ...current]);
+      setStatusText(""); setStatusFile(null); setShowStatusComposer(false);
+      if (statusFileInput.current) statusFileInput.current.value = "";
+    } catch (requestError) {
+      setError(requestError?.message || "Could not post status.");
+    } finally { setStatusSending(false); }
+  };
+
+  const removeStatus = async (statusId) => {
+    try {
+      await deleteStatus(statusId);
+      setStatuses((current) => current.filter((status) => status._id !== statusId));
+      setActiveStatus(null);
+    } catch (requestError) { setError(requestError?.message || "Could not delete status."); }
+  };
+
+  const saveProfile = async (event) => {
+    event.preventDefault();
+    setProfileSaving(true);
+    try {
+      const response = await updateUserProfile({ username: profileName, about: profileAbout, media: profileFile });
+      if (response.data) setUser(response.data);
+      setProfileFile(null); setShowProfile(false);
+    } catch (requestError) { setError(requestError?.message || "Could not update profile."); }
+    finally { setProfileSaving(false); }
   };
 
   const startConversation = async (contact) => {
@@ -164,9 +238,9 @@ function Chat() {
 
   return <main className="chat-page">
     <aside className={`chat-sidebar ${activeConversation ? "mobile-hidden" : ""}`}>
-      <header className="chat-brand"><b>◌</b><span>We<span>Chat</span></span><button type="button" onClick={openContacts}>New chat</button></header>
+      <header className="chat-brand"><b>◌</b><span>We<span>Chat</span></span><button type="button" onClick={() => { setProfileName(user?.username || ""); setProfileAbout(user?.about || ""); setShowProfile(true); }}>My profile</button><button type="button" onClick={openContacts}>New chat</button></header>
       <div className="chat-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search chats" /></div>
-      <button className="status-entry" type="button" onClick={() => setError("Status updates are available through your existing status API.")}><b>◌</b><span><strong>Status</strong><small>See recent updates</small></span></button>
+      <section className="status-strip"><div className="status-strip-header"><strong>Status</strong><button type="button" onClick={() => setShowStatusComposer(true)}>Add status</button></div><div className="status-list"><button className="status-avatar add-status" type="button" onClick={() => setShowStatusComposer(true)}><b>＋</b><small>My status</small></button>{statuses.map((status) => <button className="status-avatar" type="button" key={status._id} onClick={() => openStatus(status)}><Avatar user={status.user} /><small>{labelFor(status.user)}</small></button>)}</div></section>
       <div className="conversation-list">
         {loading && <p>Loading chats…</p>}
         {!loading && !visibleConversations.length && <p>No conversations yet.</p>}
@@ -197,6 +271,9 @@ function Chat() {
         </div>
       </div>
     </div>}
+    {showStatusComposer && <div className="contact-modal" role="dialog" aria-modal="true" aria-label="Create status"><form className="contact-card status-composer" onSubmit={publishStatus}><header><strong>New status</strong><button type="button" onClick={() => setShowStatusComposer(false)} aria-label="Close">×</button></header><textarea value={statusText} onChange={(event) => setStatusText(event.target.value)} placeholder="Share an update..." autoFocus /><input ref={statusFileInput} hidden type="file" accept="image/*,video/*" onChange={(event) => setStatusFile(event.target.files?.[0] || null)} /><div className="status-compose-actions"><button type="button" onClick={() => statusFileInput.current?.click()}>{statusFile ? statusFile.name : "Attach photo or video"}</button><button className="send-button" type="submit" disabled={statusSending}>{statusSending ? "Posting…" : "Post status"}</button></div></form></div>}
+    {activeStatus && <div className="image-lightbox status-viewer" role="dialog" aria-modal="true" aria-label="Status" onClick={() => setActiveStatus(null)}><button className="image-lightbox-close" type="button" aria-label="Close status" onClick={() => setActiveStatus(null)}>×</button><article className="status-card" onClick={(event) => event.stopPropagation()}><header><Avatar user={activeStatus.user} /><span><strong>{labelFor(activeStatus.user)}</strong><small>{timeFor(activeStatus.createdAt)}</small></span></header>{activeStatus.contentType === "image" ? <img src={activeStatus.content} alt="Shared status" /> : activeStatus.contentType === "video" ? <video src={activeStatus.content} controls autoPlay /> : <p>{activeStatus.content}</p>}{userIdOf(activeStatus.user) === currentUserId && <button className="delete-status" type="button" onClick={() => removeStatus(activeStatus._id)}>Delete status</button>}</article></div>}
+    {showProfile && <div className="contact-modal" role="dialog" aria-modal="true" aria-label="My profile"><form className="contact-card profile-card" onSubmit={saveProfile}><header><strong>My profile</strong><button type="button" onClick={() => setShowProfile(false)} aria-label="Close">×</button></header><button className="profile-photo" type="button" onClick={() => profileFileInput.current?.click()}>{profileFile ? <img src={URL.createObjectURL(profileFile)} alt="Profile preview" /> : <Avatar user={user} />}<span>Change photo</span></button><input ref={profileFileInput} hidden type="file" accept="image/*" onChange={(event) => setProfileFile(event.target.files?.[0] || null)} /><label>Name<input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Your name" /></label><label>About<input value={profileAbout} onChange={(event) => setProfileAbout(event.target.value)} placeholder="About you" /></label><button className="send-button" type="submit" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save changes"}</button></form></div>}
   </main>;
 }
 

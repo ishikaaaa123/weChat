@@ -43,13 +43,18 @@ export const verifyPhoneOtp = async (code) => {
   }
 };
 
+// Sends username / about / picture. The backend multer middleware expects the
+// file under the "media" field, so a FormData body is used when a file exists.
 export const updateUserProfile = async (data) => {
   try {
-    const formData = new FormData();
-    if (data.username !== undefined) formData.append("username", data.username);
-    if (data.about !== undefined) formData.append("about", data.about);
-    if (data.media) formData.append("media", data.media);
-    const response = await axiosInstance.put("/auth/update-profile", formData);
+    const form = new FormData();
+    if (data.username !== undefined) form.append("username", data.username);
+    if (data.about !== undefined) form.append("about", data.about);
+    if (data.media) form.append("media", data.media);
+
+    const response = await axiosInstance.put("/auth/update-profile", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
     return response.data;
   } catch (error) {
     throw error.response ? error.response.data : error.message;
