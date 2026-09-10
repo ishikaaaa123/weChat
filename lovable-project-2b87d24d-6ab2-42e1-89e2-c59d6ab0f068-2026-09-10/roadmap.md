@@ -1,3 +1,0 @@
-- [ ] Add emoji picker beside Add Files using uploaded emoji data
-- [ ] Refine My Profile using the existing UI and color scheme
-- [ ] Replace top-right utilities with a video-call icon
