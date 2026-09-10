@@ -31,6 +31,7 @@ const dateLabelFor = (value) => {
   return date.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
 };
 const reactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const composerEmojis = ["😀", "😃", "😄", "😁", "😂", "🤣", "😊", "😍", "😘", "😎", "🥳", "🤔", "😢", "😭", "😡", "👍", "👎", "👏", "🙏", "❤️", "💜", "🔥", "✨", "🎉", "💯", "✅", "👋", "🤝", "🙌", "💪", "🌞", "🌈", "🍕", "☕"];
 
 function Avatar({ user, online }) {
   const name = labelFor(user);
@@ -72,6 +73,8 @@ function Chat() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [showContactProfile, setShowContactProfile] = useState(false);
   const [reactionPickerId, setReactionPickerId] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [emojiQuery, setEmojiQuery] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const fileInput = useRef(null);
   const statusFileInput = useRef(null);
@@ -276,6 +279,10 @@ function Chat() {
     setReactionPickerId(null);
   };
 
+  const addComposerEmoji = (emoji) => {
+    setDraft((current) => `${current}${emoji}`);
+  };
+
   const logout = async () => {
     setLoggingOut(true);
     try {
@@ -359,7 +366,7 @@ function Chat() {
             </article>
           </Fragment>;
         })}{typingUserId === userIdOf(otherUser) && <p className="typing-indicator">typing…</p>}<span ref={bottom} /></div>
-        <form className="composer" onSubmit={send}>{file && <small>Attached: {file.name}</small>}<div><button type="button" onClick={() => fileInput.current?.click()}>＋</button><input ref={fileInput} hidden type="file" accept="image/*,video/*" onChange={(event) => setFile(event.target.files?.[0] || null)} /><input value={draft} onChange={(event) => updateDraft(event.target.value)} onBlur={() => updateDraft("")} placeholder="Type a message..." /><button className="send-button" type="submit" disabled={sending}>{sending ? "…" : "Send"}</button></div></form>
+        <form className="composer" onSubmit={send}>{file && <small>Attached: {file.name}</small>}{showEmojiPicker && <div className="composer-emoji-picker"><header><strong>Emoji</strong><button type="button" onClick={() => setShowEmojiPicker(false)} aria-label="Close emoji picker">×</button></header><input value={emojiQuery} onChange={(event) => setEmojiQuery(event.target.value)} placeholder="Find an emoji" aria-label="Find an emoji" /><div>{composerEmojis.filter((emoji) => !emojiQuery.trim() || emoji.includes(emojiQuery.trim())).map((emoji) => <button type="button" key={emoji} onClick={() => addComposerEmoji(emoji)} aria-label={`Add ${emoji}`}>{emoji}</button>)}</div></div>}<div><button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach photo or video">＋</button><button className={`composer-emoji-button ${showEmojiPicker ? "active" : ""}`} type="button" onClick={() => setShowEmojiPicker((current) => !current)} aria-label="Open emoji picker">☺</button><input ref={fileInput} hidden type="file" accept="image/*,video/*" onChange={(event) => setFile(event.target.files?.[0] || null)} /><input value={draft} onChange={(event) => updateDraft(event.target.value)} onBlur={() => updateDraft("")} placeholder="Type a message..." /><button className="send-button" type="submit" disabled={sending}>{sending ? "…" : "Send"}</button></div></form>
       </>}</section>
     {error && <button className="chat-error" type="button" onClick={() => setError("")}>{error}</button>}
     {expandedImage && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="Full-size image" onClick={() => setExpandedImage("")}><button className="image-lightbox-close" type="button" aria-label="Close full-size image" onClick={() => setExpandedImage("")}>×</button><img src={expandedImage} alt="Shared image in full size" onClick={(event) => event.stopPropagation()} /></div>}
