@@ -70,6 +70,7 @@ function Chat() {
   const [profileAbout, setProfileAbout] = useState(user?.about || "");
   const [profileFile, setProfileFile] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [showContactProfile, setShowContactProfile] = useState(false);
   const [reactionPickerId, setReactionPickerId] = useState(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const fileInput = useRef(null);
@@ -112,7 +113,10 @@ function Chat() {
       loadConversations();
     };
     const presence = ({ userId, isOnline }) => setOnlineUsers((current) => isOnline ? [...new Set([...current, String(userId)])] : current.filter((id) => id !== String(userId)));
-    const typing = ({ userId, isTyping }) => setTypingUserId(isTyping ? String(userId) : null);
+    const typing = ({ userId, conversationId, isTyping }) => {
+      if (String(conversationId) !== String(activeConversation?._id)) return;
+      setTypingUserId(isTyping ? String(userId) : null);
+    };
     const status = ({ messageId, messageStatus }) => setMessages((current) => current.map((message) => message._id === messageId ? { ...message, messageStatus } : message));
     const removed = ({ messageId }) => setMessages((current) => current.filter((message) => message._id !== messageId));
     const statusCreated = (status) => setStatuses((current) => [status, ...current.filter((item) => item._id !== status._id)]);
@@ -264,7 +268,7 @@ function Chat() {
 
   const updateDraft = (value) => {
     setDraft(value);
-    if (activeConversation && otherUser) getSocket()?.emit(value ? "typing_start" : "typing_stop", { conversationId: activeConversation._id, receiverId: userIdOf(otherUser) });
+    if (activeConversation?._id && otherUser) getSocket()?.emit(value ? "typing_start" : "typing_stop", { conversationId: activeConversation._id, receiverId: userIdOf(otherUser) });
   };
 
   const reactToMessage = (messageId, emoji) => {
@@ -333,7 +337,7 @@ function Chat() {
 
     <section className={`chat-window ${activeConversation ? "" : "desktop-empty"}`}>
       {!activeConversation ? <p className="empty-state">Select a chat to start messaging</p> : <>
-        <header className="chat-header"><button className="back-button" type="button" onClick={() => setActiveConversation(null)}>‹</button><Avatar user={otherUser} online={onlineUsers.includes(userIdOf(otherUser))} /><span><strong>{labelFor(otherUser)}</strong><small>{typingUserId === userIdOf(otherUser) ? "typing…" : onlineUsers.includes(userIdOf(otherUser)) ? "Online" : "Offline"}</small></span><div className="call-actions"><button type="button" aria-label="Voice call">⌕</button><button type="button" aria-label="Video call">▣</button></div></header>
+        <header className="chat-header"><button className="back-button" type="button" onClick={() => setActiveConversation(null)}>‹</button><button className="contact-header-button" type="button" onClick={() => setShowContactProfile(true)} aria-label={`Open ${labelFor(otherUser)}'s profile`}><Avatar user={otherUser} online={onlineUsers.includes(userIdOf(otherUser))} /><span><strong>{labelFor(otherUser)}</strong><small>{typingUserId === userIdOf(otherUser) ? "typing…" : onlineUsers.includes(userIdOf(otherUser)) ? "Online" : "Offline"}</small></span></button><div className="call-actions"><button type="button" aria-label="Voice call">⌕</button><button type="button" aria-label="Video call">▣</button></div></header>
         <div className="message-list">{messages.map((message, index) => {
           const mine = userIdOf(message.sender) === currentUserId;
           const reactions = message.reactions || [];
@@ -371,6 +375,7 @@ function Chat() {
       </div>
     </div>}
     {showStatusComposer && <div className="contact-modal" role="dialog" aria-modal="true" aria-label="Create status"><form className="contact-card status-composer" onSubmit={publishStatus}><header><strong>New status</strong><button type="button" onClick={() => setShowStatusComposer(false)} aria-label="Close">×</button></header><textarea value={statusText} onChange={(event) => setStatusText(event.target.value)} placeholder="Share an update..." autoFocus /><input ref={statusFileInput} hidden type="file" accept="image/*,video/*" onChange={(event) => setStatusFile(event.target.files?.[0] || null)} /><div className="status-compose-actions"><button type="button" onClick={() => statusFileInput.current?.click()}>{statusFile ? statusFile.name : "Attach photo or video"}</button><button className="send-button" type="submit" disabled={statusSending}>{statusSending ? "Posting…" : "Post status"}</button></div></form></div>}
+    {showContactProfile && otherUser && <div className="contact-modal" role="dialog" aria-modal="true" aria-label={`${labelFor(otherUser)}'s profile`}><section className="contact-card contact-profile"><header><strong>Contact info</strong><button type="button" onClick={() => setShowContactProfile(false)} aria-label="Close">×</button></header><div className="contact-profile-hero">{otherUser.profilePicture ? <img src={otherUser.profilePicture} alt={labelFor(otherUser)} /> : <b>{labelFor(otherUser)[0]?.toUpperCase()}</b>}<h2>{labelFor(otherUser)}</h2><small>{onlineUsers.includes(userIdOf(otherUser)) ? "Online" : "Offline"}</small></div><dl><div><dt>Username</dt><dd>{otherUser.username || "Not set"}</dd></div>{otherUser.about && <div><dt>About</dt><dd>{otherUser.about}</dd></div>}{otherUser.phoneNumber && <div><dt>Phone</dt><dd>{otherUser.phoneNumber}</dd></div>}{otherUser.email && <div><dt>Email</dt><dd>{otherUser.email}</dd></div>}</dl></section></div>}
     {activeStatus && <div className="image-lightbox status-viewer" role="dialog" aria-modal="true" aria-label="Status" onClick={() => setActiveStatus(null)}><button className="image-lightbox-close" type="button" aria-label="Close status" onClick={() => setActiveStatus(null)}>×</button><article className="status-card" onClick={(event) => event.stopPropagation()}><header><Avatar user={activeStatus.user} /><span><strong>{labelFor(activeStatus.user)}</strong><small>{timeFor(activeStatus.createdAt)}</small></span></header>{activeStatus.contentType === "image" ? <img src={activeStatus.content} alt="Shared status" /> : activeStatus.contentType === "video" ? <video src={activeStatus.content} controls autoPlay /> : <p>{activeStatus.content}</p>}{userIdOf(activeStatus.user) === currentUserId && <button className="delete-status" type="button" onClick={() => removeStatus(activeStatus._id)}>Delete status</button>}</article></div>}
     {showProfile && <div className="contact-modal" role="dialog" aria-modal="true" aria-label="My profile"><form className="contact-card profile-card" onSubmit={saveProfile}><header><strong>My profile</strong><button type="button" onClick={() => setShowProfile(false)} aria-label="Close">×</button></header><button className="profile-photo" type="button" onClick={() => profileFileInput.current?.click()}>{profileFile ? <img src={URL.createObjectURL(profileFile)} alt="Profile preview" /> : <Avatar user={user} />}<span>Change photo</span></button><input ref={profileFileInput} hidden type="file" accept="image/*" onChange={(event) => setProfileFile(event.target.files?.[0] || null)} /><label>Name<input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Your name" /></label><label>About<input value={profileAbout} onChange={(event) => setProfileAbout(event.target.value)} placeholder="About you" /></label><button className="send-button" type="submit" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save changes"}</button></form></div>}
   </main>;

@@ -1,6 +1,7 @@
 const { Server } = require("socket.io");
 const User = require("../models/User");
 const Message = require("../models/message");
+const handleVideoCallEvent = require("./video-call-service");
 
 // userId -> Set<socketId>, so a user stays online across multiple tabs/devices.
 const onlineUsers = new Map();
@@ -41,6 +42,7 @@ const initializeSocket = (server) => {
       if (!nextUserId) return;
 
       try {
+        socket.userId = nextUserId;
         if (userId && userId !== nextUserId) {
           const previousSockets = onlineUsers.get(userId);
           previousSockets?.delete(socket.id);
@@ -170,6 +172,9 @@ const initializeSocket = (server) => {
         console.error("Error handling reaction:", error);
       }
     });
+
+    //handle video call events
+    handleVideoCallEvent(socket,io,onlineUsers);
 
     socket.on("disconnect", async () => {
       if (!userId) return;
