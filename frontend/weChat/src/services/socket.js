@@ -8,7 +8,7 @@ export const connectSocket = (userId) => {
     socket = io(socketUrl, { withCredentials: true, transports: ["websocket", "polling"] });
   }
 
-  const registerUser = () => socket.emit("user_connected", userId);
+  const registerUser = () => socket.emit("user_connected", userId, () => {});
   if (userId) {
     if (socket.connected) registerUser();
     socket.once("connect", registerUser);

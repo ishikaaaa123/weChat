@@ -37,9 +37,9 @@ const initializeSocket = (server) => {
     console.log(`User connected: ${socket.id}`);
     let userId = null;
 
-    socket.on("user_connected", async (connectingUserId) => {
+    socket.on("user_connected", async (connectingUserId, callback) => {
       const nextUserId = toUserId(connectingUserId);
-      if (!nextUserId) return;
+      if (!nextUserId) return callback?.({ ok: false, error: "Missing user ID" });
 
       try {
         socket.userId = nextUserId;
@@ -62,8 +62,10 @@ const initializeSocket = (server) => {
           });
           io.emit("user_status", { userId, isOnline: true });
         }
+        callback?.({ ok: true, userId });
       } catch (error) {
         console.error("Error connecting user socket:", error);
+        callback?.({ ok: false, error: "Could not register socket" });
       }
     });
 
